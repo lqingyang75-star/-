@@ -249,6 +249,48 @@
             text-align: center;
         }
 
+        .score-good { background: var(--success-bg); color: var(--success-text); }
+        .score-mid  { background: #fffbeb; color: #b45309; }
+        .score-low  { background: var(--error-bg); color: var(--error-text); }
+
+        .watchlist-card { margin-top: 16px; }
+        .watch-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .watch-head h3 { margin: 0; font-size: 14px; }
+        .watch-actions { display: flex; gap: 8px; }
+        .watch-hint { font-size: 12px; color: var(--text-sub); margin: 0 0 8px; }
+        .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 8px 5px 12px;
+            background: #f1f5f9;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            font-size: 13px;
+            cursor: pointer;
+            user-select: none;
+            transition: border-color .15s, background .15s;
+        }
+        .chip:hover { border-color: var(--primary); background: #eff6ff; }
+        .chip .del {
+            border: 0;
+            background: transparent;
+            color: var(--text-sub);
+            font-size: 15px;
+            line-height: 1;
+            padding: 0 4px;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        .chip .del:hover { color: var(--error-text); background: var(--error-bg); }
+        .watch-empty { font-size: 13px; color: var(--text-sub); padding: 6px 0; }
+
         .reason {
             white-space: normal;
             min-width: 180px;
@@ -324,7 +366,18 @@
             <div class="empty">尚未查询，点击「实时选股」获取结果。</div>
         </div>
     </div>
-</div>
+
+    <div class="card watchlist-card">
+        <div class="watch-head">
+            <h3>自选股</h3>
+            <div class="watch-actions">
+                <button id="saveWatchBtn" class="btn-ghost" type="button">保存当前为自选</button>
+                <button id="clearWatchBtn" class="btn-ghost" type="button">清空自选</button>
+            </div>
+        </div>
+        <p class="watch-hint">点击自选代码将其填入输入框并立即查询，可删除单只。</p>
+        <div id="watchChips" class="chips"></div>
+    </div>
 
 <script>
     (function () {
@@ -338,7 +391,41 @@
         var resultBody = document.getElementById('resultBody');
         var resultMeta = document.getElementById('resultMeta');
 
+        var watchChips = document.getElementById('watchChips');
+        var saveWatchBtn = document.getElementById('saveWatchBtn');
+        var clearWatchBtn = document.getElementById('clearWatchBtn');
+
         var loading = false;
+        var WATCH_KEY = 'stockPickerWatchlist';
+
+        function loadWatchlist() {
+            try {
+                var raw = JSON.parse(localStorage.getItem(WATCH_KEY) || '[]');
+                return Array.isArray(raw) ? raw : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveWatchlist(list) {
+            try {
+                localStorage.setItem(WATCH_KEY, JSON.stringify(list));
+            } catch (e) { /* 存储不可用时静默降级 */ }
+        }
+
+        function renderWatchlist() {
+            var list = loadWatchlist();
+            if (list.length === 0) {
+                watchChips.innerHTML = '<span class="watch-empty">暂无自选，输入代码后点「保存当前为自选」。</span>';
+                return;
+            }
+            watchChips.innerHTML = list.map(function (code) {
+                return '<span class="chip" data-code="' + escapeHtml(code) + '">'
+                    + escapeHtml(code)
+                    + '<button class="del" type="button" title="删除" data-del="' + escapeHtml(code) + '">×</button>'
+                    + '</span>';
+            }).join('');
+        }
 
         function setFeedback(type, message) {
             feedback.className = 'feedback show ' + type;
@@ -398,6 +485,8 @@
                 var changeClass = change > 0 ? 'up' : (change < 0 ? 'down' : '');
                 var sign = change > 0 ? '+' : '';
                 var meta = Number(s.roe) > 0 ? '实时' : '实时(无ROE)';
+                var score = Number(item.score);
+                var scoreClass = score >= 45 ? 'score-good' : (score >= 30 ? 'score-mid' : 'score-low');
 
                 html += '<tr>'
                     + '<td>' + escapeHtml(s.code) + '</td>'
@@ -408,7 +497,7 @@
                     + '<td class="num">' + fmt(s.pb) + '</td>'
                     + '<td class="num">' + fmt(s.roe) + '</td>'
                     + '<td>' + escapeHtml(meta) + '</td>'
-                    + '<td class="reason"><span class="score">' + fmt(item.score)
+                    + '<td class="reason"><span class="score ' + scoreClass + '">' + fmt(score)
                     + '</span> ' + escapeHtml(item.reason) + '</td>'
                     + '</tr>';
             });
@@ -518,6 +607,70 @@
                 submit();
             }
         });
+
+        saveWatchBtn.addEventListener('click', function () {
+            if (loading) {
+                return;
+            }
+            var rawCodes = codesInput.value.trim();
+            if (!rawCodes) {
+                setFeedback('error', '请先在输入框中填写要保存的股票代码。');
+                return;
+            }
+            var codeList = rawCodes.split(/[,，\s]+/).filter(Boolean);
+            var bad = codeList.filter(function (c) { return !/^\d{6}$/.test(c); });
+            if (bad.length > 0) {
+                setFeedback('error', '以下代码无效，无法保存：' + bad.join('、'));
+                return;
+            }
+            var list = loadWatchlist();
+            codeList.forEach(function (c) {
+                if (list.indexOf(c) === -1) {
+                    list.push(c);
+                }
+            });
+            saveWatchlist(list);
+            renderWatchlist();
+            setFeedback('success', '已保存 ' + codeList.length + ' 只自选股。');
+        });
+
+        clearWatchBtn.addEventListener('click', function () {
+            if (loading) {
+                return;
+            }
+            if (loadWatchlist().length === 0) {
+                setFeedback('info', '自选列表已是空的。');
+                return;
+            }
+            if (!window.confirm('确定清空全部自选股吗？')) {
+                return;
+            }
+            saveWatchlist([]);
+            renderWatchlist();
+            setFeedback('info', '已清空自选股。');
+        });
+
+        watchChips.addEventListener('click', function (e) {
+            var delBtn = e.target.closest('.del');
+            if (!delBtn) {
+                var chip = e.target.closest('.chip');
+                if (chip && !loading) {
+                    codesInput.value = chip.getAttribute('data-code');
+                    submit();
+                }
+                return;
+            }
+            if (loading) {
+                return;
+            }
+            var code = delBtn.getAttribute('data-del');
+            var list = loadWatchlist().filter(function (c) { return c !== code; });
+            saveWatchlist(list);
+            renderWatchlist();
+            setFeedback('info', '已从自选删除 ' + code + '。');
+        });
+
+        renderWatchlist();
     })();
 </script>
 </body>
