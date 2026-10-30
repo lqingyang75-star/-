@@ -21,10 +21,10 @@ import java.util.List;
 @Service
 public class StockPickerService {
 
-    private final StockDataProvider dataProvider;
+    private final RealTimeStockDataProvider realTimeProvider;
 
-    public StockPickerService(StockDataProvider dataProvider) {
-        this.dataProvider = dataProvider;
+    public StockPickerService(RealTimeStockDataProvider realTimeProvider) {
+        this.realTimeProvider = realTimeProvider;
     }
 
     /**
@@ -34,8 +34,32 @@ public class StockPickerService {
      * @return 排序后的选股结果
      */
     public List<PickResult> pick(int limit) {
+        return pick(limit, null);
+    }
+
+    /**
+     * 按评分从高到低返回候选股票。
+     *
+     * @param limit 返回条数上限
+     * @param codes 逗号分隔的股票代码；提供时用实时行情打分，缺省用内置样例
+     * @return 排序后的选股结果
+     */
+    public List<PickResult> pick(int limit, String codes) {
+        List<Stock> stocks;
+        if (codes != null && !codes.isBlank()) {
+            List<String> list = new ArrayList<>();
+            for (String part : codes.split(",")) {
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty()) {
+                    list.add(trimmed);
+                }
+            }
+            stocks = realTimeProvider.fetchByCodes(list);
+        } else {
+            stocks = realTimeProvider.allStocks();
+        }
         List<PickResult> results = new ArrayList<>();
-        for (Stock stock : dataProvider.allStocks()) {
+        for (Stock stock : stocks) {
             results.add(score(stock));
         }
         results.sort(Comparator.comparingDouble(PickResult::score).reversed());
