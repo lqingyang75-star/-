@@ -263,6 +263,17 @@
             color: var(--text-sub);
         }
 
+        .result-tools {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-sm {
+            padding: 5px 12px;
+            font-size: 12px;
+        }
+
         .table-wrap {
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
@@ -383,6 +394,104 @@
             100% { background-position: 0 50%; }
         }
 
+        .tabs {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 16px;
+            padding: 4px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            box-shadow: var(--shadow-sm);
+            overflow-x: auto;
+        }
+        .tab {
+            flex: 1;
+            padding: 9px 14px;
+            border: 0;
+            border-radius: 999px;
+            background: transparent;
+            color: var(--text-sub);
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        .tab.active {
+            background: var(--primary-grad);
+            color: #fff;
+            font-weight: 600;
+            box-shadow: 0 2px 6px rgba(15, 118, 110, .3);
+        }
+        .panel { display: none; }
+        .panel.active { display: block; }
+
+        .hint {
+            margin: 12px 0 0;
+            font-size: 12px;
+            color: var(--text-sub);
+        }
+
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text);
+            background: var(--card);
+        }
+        select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(15, 118, 110, .14);
+        }
+
+        .cmp-score {
+            display: inline-block;
+            min-width: 52px;
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .report-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .report-head .rname { font-size: 18px; font-weight: 600; }
+        .report-head .rcode { color: var(--text-sub); font-size: 13px; }
+        .report-head .rprice { font-size: 18px; font-variant-numeric: tabular-nums; }
+        .rating-badge {
+            margin-left: auto;
+            padding: 5px 14px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .metric { margin-bottom: 10px; }
+        .metric .m-label {
+            font-size: 12px;
+            color: var(--text-sub);
+            margin-bottom: 2px;
+        }
+        .metric .m-value { font-size: 14px; }
+        .risk-list {
+            margin: 6px 0 0;
+            padding-left: 18px;
+            font-size: 13px;
+            color: var(--text-sub);
+        }
+        .risk-list li { margin-bottom: 3px; }
+        .report-block {
+            border-top: 1px dashed var(--border);
+            margin-top: 14px;
+            padding-top: 12px;
+        }
+
         @media (max-width: 640px) {
             body { padding: 16px 12px 32px; }
             .card { padding: 16px; }
@@ -401,9 +510,19 @@
 <div class="container">
     <header>
         <h1>实时选股助手</h1>
-        <p>输入股票代码，实时拉取行情（价格 / PE / PB / ROE）并按规则打分排序。</p>
+        <p>实时行情 + 多策略评分：智能选股、策略对比、个股分析。</p>
     </header>
 
+    <nav class="tabs" id="tabs">
+        <button class="tab active" type="button" data-tab="query">行情查询</button>
+        <button class="tab" type="button" data-tab="screen">智能选股</button>
+        <button class="tab" type="button" data-tab="compare">策略对比</button>
+        <button class="tab" type="button" data-tab="analyze">个股分析</button>
+    </nav>
+
+    <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
+
+    <section id="panel-query" class="panel active">
     <div class="card">
         <div class="form-row">
             <div class="field">
@@ -424,12 +543,13 @@
         </div>
     </div>
 
-    <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
-
     <div class="card">
         <div class="result-head">
             <h2>选股结果</h2>
-            <span id="resultMeta" class="meta"></span>
+            <div class="result-tools">
+                <span id="resultMeta" class="meta"></span>
+                <button id="exportBtn" class="btn-ghost btn-sm" type="button" disabled>导出 CSV</button>
+            </div>
         </div>
         <div id="resultBody" class="table-wrap">
             <div class="empty">尚未查询，点击「实时选股」获取结果。</div>
@@ -447,6 +567,87 @@
         <p class="watch-hint">点击自选代码将其填入输入框并立即查询，可删除单只。</p>
         <div id="watchChips" class="chips"></div>
     </div>
+    </section>
+
+    <section id="panel-screen" class="panel">
+        <div class="card">
+            <div class="form-row">
+                <div class="field">
+                    <label for="screenStrategy">选股策略</label>
+                    <select id="screenStrategy">
+                        <option value="balanced">均衡型（估值 / 盈利 / 动量兼顾）</option>
+                        <option value="value">价值型（重低 PE、低 PB）</option>
+                        <option value="growth">成长型（重高 ROE、上涨趋势）</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="screenLimit">返回条数</label>
+                    <input id="screenLimit" type="number" min="1" max="30" step="1" value="10">
+                </div>
+                <div class="actions">
+                    <button id="screenBtn" class="btn-primary" type="button">一键选股</button>
+                </div>
+            </div>
+            <p class="hint">系统扫描内置股票池（30 只主流 A 股），实时拉取行情并按策略评分排名。</p>
+        </div>
+        <div class="card">
+            <div class="result-head">
+                <h2>选股榜单</h2>
+                <span id="screenMeta" class="meta"></span>
+            </div>
+            <div id="screenBody" class="table-wrap">
+                <div class="empty">点击「一键选股」，从股票池中筛出评分靠前的股票。</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="panel-compare" class="panel">
+        <div class="card">
+            <div class="form-row">
+                <div class="field">
+                    <label for="compareCodes">股票代码（逗号分隔，可多只）</label>
+                    <input id="compareCodes" type="text" value="600519,000651,601318">
+                </div>
+                <div class="actions">
+                    <button id="compareBtn" class="btn-primary" type="button">开始对比</button>
+                </div>
+            </div>
+            <p class="hint">同一批股票分别按 价值型 / 成长型 / 均衡型 打分，看它更适合哪种投资风格。</p>
+        </div>
+        <div class="card">
+            <div class="result-head">
+                <h2>策略对比</h2>
+                <span id="compareMeta" class="meta"></span>
+            </div>
+            <div id="compareBody" class="table-wrap">
+                <div class="empty">输入股票代码后点击「开始对比」。</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="panel-analyze" class="panel">
+        <div class="card">
+            <div class="form-row">
+                <div class="field">
+                    <label for="analyzeCode">股票代码</label>
+                    <input id="analyzeCode" type="text" value="600519" placeholder="如 600519">
+                </div>
+                <div class="actions">
+                    <button id="analyzeBtn" class="btn-primary" type="button">生成分析</button>
+                </div>
+            </div>
+            <p class="hint">输出估值、盈利、风险提示与评级建议的个股分析报告。</p>
+        </div>
+        <div class="card">
+            <div class="result-head">
+                <h2>分析报告</h2>
+                <span id="analyzeMeta" class="meta"></span>
+            </div>
+            <div id="analyzeBody" class="report-wrap">
+                <div class="empty">输入一只股票代码，生成分析报告。</div>
+            </div>
+        </div>
+    </section>
 
 <script>
     (function () {
@@ -459,12 +660,32 @@
         var feedback = document.getElementById('feedback');
         var resultBody = document.getElementById('resultBody');
         var resultMeta = document.getElementById('resultMeta');
+        var exportBtn = document.getElementById('exportBtn');
+
+        var tabs = document.getElementById('tabs');
+        var screenStrategy = document.getElementById('screenStrategy');
+        var screenLimit = document.getElementById('screenLimit');
+        var screenBtn = document.getElementById('screenBtn');
+        var screenBody = document.getElementById('screenBody');
+        var screenMeta = document.getElementById('screenMeta');
+        var compareCodes = document.getElementById('compareCodes');
+        var compareBtn = document.getElementById('compareBtn');
+        var compareBody = document.getElementById('compareBody');
+        var compareMeta = document.getElementById('compareMeta');
+        var analyzeCode = document.getElementById('analyzeCode');
+        var analyzeBtn = document.getElementById('analyzeBtn');
+        var analyzeBody = document.getElementById('analyzeBody');
+        var analyzeMeta = document.getElementById('analyzeMeta');
 
         var watchChips = document.getElementById('watchChips');
         var saveWatchBtn = document.getElementById('saveWatchBtn');
         var clearWatchBtn = document.getElementById('clearWatchBtn');
 
         var loading = false;
+        var screenBusy = false;
+        var compareBusy = false;
+        var analyzeBusy = false;
+        var lastResults = [];
         var WATCH_KEY = 'stockPickerWatchlist';
 
         function loadWatchlist() {
@@ -524,10 +745,13 @@
             }
             resultBody.innerHTML = '<table><tbody>' + rows + '</tbody></table>';
             resultMeta.textContent = '';
+            exportBtn.disabled = true;
         }
 
         function showEmpty(message) {
             resultBody.innerHTML = '<div class="empty">' + message + '</div>';
+            lastResults = [];
+            exportBtn.disabled = true;
         }
 
         function escapeHtml(text) {
@@ -542,7 +766,12 @@
             return Number(value).toFixed(digits === undefined ? 2 : digits);
         }
 
-        function renderRows(list) {
+        /** 评分徽章分档（新刻度 0~100）：≥65 强、≥45 中、其余弱。 */
+        function scoreClass(score) {
+            return score >= 65 ? 'score-good' : (score >= 45 ? 'score-mid' : 'score-low');
+        }
+
+        function buildStockTable(list) {
             var html = '<table><thead><tr>'
                 + '<th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th>'
                 + '<th>PE</th><th>PB</th><th>ROE(%)</th><th>数据状态</th><th>评分 / 理由</th>'
@@ -555,7 +784,6 @@
                 var sign = change > 0 ? '+' : '';
                 var meta = Number(s.roe) > 0 ? '实时' : '实时(无ROE)';
                 var score = Number(item.score);
-                var scoreClass = score >= 45 ? 'score-good' : (score >= 30 ? 'score-mid' : 'score-low');
 
                 html += '<tr>'
                     + '<td>' + escapeHtml(s.code) + '</td>'
@@ -566,13 +794,18 @@
                     + '<td class="num">' + fmt(s.pb) + '</td>'
                     + '<td class="num">' + fmt(s.roe) + '</td>'
                     + '<td>' + escapeHtml(meta) + '</td>'
-                    + '<td class="reason"><span class="score ' + scoreClass + '">' + fmt(score)
+                    + '<td class="reason"><span class="score ' + scoreClass(score) + '">' + fmt(score)
                     + '</span> ' + escapeHtml(item.reason) + '</td>'
                     + '</tr>';
             });
 
-            html += '</tbody></table>';
-            resultBody.innerHTML = html;
+            return html + '</tbody></table>';
+        }
+
+        function renderRows(list) {
+            resultBody.innerHTML = buildStockTable(list);
+            lastResults = list;
+            exportBtn.disabled = false;
         }
 
         function validate() {
@@ -663,8 +896,293 @@
             codesInput.focus();
         }
 
+        // ---------- 页签切换 ----------
+
+        function activateTab(name) {
+            Array.prototype.forEach.call(tabs.querySelectorAll('.tab'), function (t) {
+                t.classList.toggle('active', t.getAttribute('data-tab') === name);
+            });
+            Array.prototype.forEach.call(document.querySelectorAll('.panel'), function (p) {
+                p.classList.toggle('active', p.id === 'panel-' + name);
+            });
+            clearFeedback();
+        }
+
+        // ---------- 智能选股 ----------
+
+        function runScreen() {
+            if (screenBusy) {
+                return;
+            }
+            var limit = Number(screenLimit.value.trim());
+            if (!Number.isInteger(limit) || limit < 1 || limit > 30) {
+                setFeedback('error', '返回条数需为 1-30 之间的整数。');
+                return;
+            }
+
+            screenBusy = true;
+            screenBtn.disabled = true;
+            screenBtn.innerHTML = '<span class="spinner"></span>扫描中…';
+            screenMeta.textContent = '';
+            screenBody.innerHTML = '<div class="empty">正在扫描股票池并实时拉取行情…</div>';
+            setFeedback('info', '正在扫描内置股票池，首次拉取 ROE 可能需要几秒…');
+
+            fetch('/api/stocks/screen?strategy=' + encodeURIComponent(screenStrategy.value)
+                    + '&limit=' + encodeURIComponent(limit))
+                .then(function (res) {
+                    if (!res.ok) {
+                        throw new Error('服务返回异常状态：HTTP ' + res.status);
+                    }
+                    return res.json();
+                })
+                .then(function (data) {
+                    if (!Array.isArray(data) || data.length === 0) {
+                        screenBody.innerHTML = '<div class="empty">未获取到行情数据，请稍后重试。</div>';
+                        setFeedback('error', '未获取到行情数据。');
+                        return;
+                    }
+                    screenBody.innerHTML = buildStockTable(data);
+                    screenMeta.textContent = '共 ' + data.length + ' 只 · '
+                        + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+                    setFeedback('success', '选股完成，共筛出 ' + data.length + ' 只股票。');
+                })
+                .catch(function (err) {
+                    screenBody.innerHTML = '<div class="empty">选股失败，请稍后重试。</div>';
+                    setFeedback('error', '选股失败：' + (err && err.message ? err.message : '未知错误'));
+                })
+                .finally(function () {
+                    screenBusy = false;
+                    screenBtn.disabled = false;
+                    screenBtn.textContent = '一键选股';
+                });
+        }
+
+        // ---------- 多策略对比 ----------
+
+        function renderCompare(list) {
+            var html = '<table><thead><tr>'
+                + '<th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th>'
+                + '<th>价值型</th><th>成长型</th><th>均衡型</th>'
+                + '</tr></thead><tbody>';
+
+            list.forEach(function (item) {
+                var s = item.stock || {};
+                var change = Number(s.changePercent);
+                var changeClass = change > 0 ? 'up' : (change < 0 ? 'down' : '');
+                var sign = change > 0 ? '+' : '';
+                html += '<tr>'
+                    + '<td>' + escapeHtml(s.code) + '</td>'
+                    + '<td>' + escapeHtml(s.name) + '</td>'
+                    + '<td class="num">' + fmt(s.price) + '</td>'
+                    + '<td class="num ' + changeClass + '">' + sign + fmt(change) + '%</td>';
+                (item.strategies || []).forEach(function (st) {
+                    var value = Number(st.score);
+                    html += '<td class="num"><span class="cmp-score ' + scoreClass(value)
+                        + '" title="' + escapeHtml(st.reason) + '">' + fmt(value) + '</span></td>';
+                });
+                html += '</tr>';
+            });
+
+            compareBody.innerHTML = html + '</tbody></table>';
+        }
+
+        function runCompare() {
+            if (compareBusy) {
+                return;
+            }
+            var raw = compareCodes.value.trim();
+            if (raw === '') {
+                setFeedback('error', '请输入至少一个股票代码。');
+                return;
+            }
+            var list = raw.split(/[,，\s]+/).filter(Boolean);
+            var bad = list.filter(function (c) {
+                return !/^\d{6}$/.test(c);
+            });
+            if (bad.length > 0) {
+                setFeedback('error', '以下代码无效（需 6 位数字）：' + bad.join('、'));
+                return;
+            }
+
+            compareBusy = true;
+            compareBtn.disabled = true;
+            compareBtn.innerHTML = '<span class="spinner"></span>对比中…';
+            compareMeta.textContent = '';
+            compareBody.innerHTML = '<div class="empty">正在计算三套策略评分…</div>';
+            setFeedback('info', '正在拉取行情并计算价值/成长/均衡三套策略评分…');
+
+            fetch('/api/stocks/compare?codes=' + encodeURIComponent(list.join(',')))
+                .then(function (res) {
+                    if (!res.ok) {
+                        throw new Error('服务返回异常状态：HTTP ' + res.status);
+                    }
+                    return res.json();
+                })
+                .then(function (data) {
+                    if (!Array.isArray(data) || data.length === 0) {
+                        compareBody.innerHTML = '<div class="empty">未获取到行情数据，请检查股票代码。</div>';
+                        setFeedback('error', '未获取到行情数据。');
+                        return;
+                    }
+                    renderCompare(data);
+                    compareMeta.textContent = '共 ' + data.length + ' 只 · '
+                        + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+                    setFeedback('success', '对比完成，共 ' + data.length + ' 只股票。');
+                })
+                .catch(function (err) {
+                    compareBody.innerHTML = '<div class="empty">对比失败，请稍后重试。</div>';
+                    setFeedback('error', '对比失败：' + (err && err.message ? err.message : '未知错误'));
+                })
+                .finally(function () {
+                    compareBusy = false;
+                    compareBtn.disabled = false;
+                    compareBtn.textContent = '开始对比';
+                });
+        }
+
+        // ---------- 个股分析 ----------
+
+        function renderAnalysis(a) {
+            var s = a.stock || {};
+            var change = Number(s.changePercent);
+            var changeClass = change > 0 ? 'up' : (change < 0 ? 'down' : '');
+            var sign = change > 0 ? '+' : '';
+            var risks = (a.risks || []).map(function (r) {
+                return '<li>' + escapeHtml(r) + '</li>';
+            }).join('');
+
+            analyzeBody.innerHTML = ''
+                + '<div class="report-head">'
+                +   '<span class="rname">' + escapeHtml(s.name) + '</span>'
+                +   '<span class="rcode">' + escapeHtml(s.code) + '</span>'
+                +   '<span class="rprice ' + changeClass + '">' + fmt(s.price)
+                +       ' (' + sign + fmt(change) + '%)</span>'
+                +   '<span class="rating-badge ' + scoreClass(Number(a.score)) + '">'
+                +       escapeHtml(a.rating) + ' · ' + fmt(a.score) + '</span>'
+                + '</div>'
+                + '<div class="metric"><div class="m-label">估值</div>'
+                +   '<div class="m-value">' + escapeHtml(a.valuation) + '</div></div>'
+                + '<div class="metric"><div class="m-label">盈利</div>'
+                +   '<div class="m-value">' + escapeHtml(a.profitability) + '</div></div>'
+                + '<div class="metric"><div class="m-label">关键指标</div>'
+                +   '<div class="m-value">PE ' + fmt(s.pe) + ' · PB ' + fmt(s.pb)
+                +   ' · ROE ' + fmt(s.roe) + '%</div></div>'
+                + '<div class="report-block"><div class="m-label">风险提示</div>'
+                +   '<ul class="risk-list">' + risks + '</ul></div>'
+                + '<div class="report-block"><div class="m-label">操作建议</div>'
+                +   '<div class="m-value">' + escapeHtml(a.suggestion) + '</div></div>';
+        }
+
+        function runAnalyze() {
+            if (analyzeBusy) {
+                return;
+            }
+            var code = analyzeCode.value.trim();
+            if (!/^\d{6}$/.test(code)) {
+                setFeedback('error', '请输入 6 位股票代码。');
+                return;
+            }
+
+            analyzeBusy = true;
+            analyzeBtn.disabled = true;
+            analyzeBtn.innerHTML = '<span class="spinner"></span>分析中…';
+            analyzeMeta.textContent = '';
+            analyzeBody.innerHTML = '<div class="empty">正在生成分析报告…</div>';
+            setFeedback('info', '正在拉取行情并生成分析报告…');
+
+            fetch('/api/stocks/analyze?code=' + encodeURIComponent(code))
+                .then(function (res) {
+                    if (!res.ok) {
+                        throw new Error('未找到该股票，请检查代码是否正确（HTTP ' + res.status + '）');
+                    }
+                    return res.json();
+                })
+                .then(function (a) {
+                    renderAnalysis(a);
+                    analyzeMeta.textContent = '生成时间 '
+                        + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+                    setFeedback('success', '分析完成：' + a.rating + '（' + fmt(a.score) + ' 分）。');
+                })
+                .catch(function (err) {
+                    analyzeBody.innerHTML = '<div class="empty">生成失败，请稍后重试。</div>';
+                    setFeedback('error', '生成失败：' + (err && err.message ? err.message : '未知错误'));
+                })
+                .finally(function () {
+                    analyzeBusy = false;
+                    analyzeBtn.disabled = false;
+                    analyzeBtn.textContent = '生成分析';
+                });
+        }
+
+        function csvCell(value) {
+            return '"' + String(value === null || value === undefined ? '' : value)
+                .replace(/"/g, '""') + '"';
+        }
+
+        function exportCsv() {
+            if (lastResults.length === 0) {
+                setFeedback('info', '暂无可导出的结果，请先查询。');
+                return;
+            }
+
+            var header = ['代码', '名称', '最新价', '涨跌幅(%)', 'PE', 'PB', 'ROE(%)', '数据状态', '评分', '理由'];
+            var lines = [header.map(csvCell).join(',')];
+
+            lastResults.forEach(function (item) {
+                var s = item.stock || {};
+                lines.push([
+                    s.code,
+                    s.name,
+                    fmt(s.price),
+                    fmt(s.changePercent),
+                    fmt(s.pe),
+                    fmt(s.pb),
+                    fmt(s.roe),
+                    Number(s.roe) > 0 ? '实时' : '实时(无ROE)',
+                    fmt(item.score),
+                    item.reason
+                ].map(csvCell).join(','));
+            });
+
+            var d = new Date();
+            var pad = function (n) { return ('0' + n).slice(-2); };
+            var stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate())
+                + '_' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+            var blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = '选股结果_' + stamp + '.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            setFeedback('success', '已导出 ' + lastResults.length + ' 条结果为 CSV。');
+        }
+
         submitBtn.addEventListener('click', submit);
         resetBtn.addEventListener('click', reset);
+        exportBtn.addEventListener('click', exportCsv);
+
+        tabs.addEventListener('click', function (e) {
+            var btn = e.target.closest('.tab');
+            if (btn) {
+                activateTab(btn.getAttribute('data-tab'));
+            }
+        });
+        screenBtn.addEventListener('click', runScreen);
+        compareBtn.addEventListener('click', runCompare);
+        analyzeBtn.addEventListener('click', runAnalyze);
+        compareCodes.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                runCompare();
+            }
+        });
+        analyzeCode.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                runAnalyze();
+            }
+        });
 
         codesInput.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') {

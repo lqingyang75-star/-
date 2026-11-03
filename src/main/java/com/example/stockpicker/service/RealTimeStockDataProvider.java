@@ -12,10 +12,14 @@ import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -48,6 +52,11 @@ public class RealTimeStockDataProvider implements StockDataProvider {
             Pattern.compile("\"ROEJQ\":(-?[\\d.]+)");
 
     private static final int TIMEOUT_MS = 5000;
+
+    /** ROE 财务指标并发拉取的线程池与整体超时。 */
+    private static final ExecutorService ROE_POOL = Executors.newFixedThreadPool(8);
+    private static final int ROE_TIMEOUT_SECONDS = 20;
+
     private static final Charset GB18030 =
             Charset.forName("GB18030");
 
@@ -75,6 +84,10 @@ public class RealTimeStockDataProvider implements StockDataProvider {
                 String code6 = get(f, 2);
                 if (code6.isEmpty()) {
                     code6 = key.replaceAll("(sh|sz|bj)", "");
+                }
+                // 腾讯对无效代码返回 v_pv_none_match=""，非 6 位代码一律跳过
+                if (!code6.matches("\\d{6}")) {
+                    continue;
                 }
                 Stock stock = new Stock(
                         code6,
@@ -123,27 +136,39 @@ public class RealTimeStockDataProvider implements StockDataProvider {
 
     // ---------- 东财 ROE ----------
 
-    private Map<String, Double> fetchRoe(List<String> codes) throws IOException {
-        Map<String, Double> result = new HashMap<>();
+    private Map<String, Double> fetchRoe(List<String> codes) {
+        Map<String, Double> result = new ConcurrentHashMap<>();
         if (codes == null || codes.isEmpty()) {
             return result;
         }
-        // 批量接口不稳定，逐只查询；每只独立超时，一只失败不影响其余
+        // 批量接口不稳定，逐只查询；并发拉取以缩短选股扫描耗时，一只失败不影响其余
+        List<CompletableFuture<Void>> tasks = new ArrayList<>();
         for (String code : codes) {
-            String secu = toSecuCode(code);
-            if (secu == null) {
-                continue;
-            }
-            try {
-                String url = ROE_URL.replace("{SECUCODE}", URLEncoder.encode(secu, StandardCharsets.UTF_8));
-                String body = httpGet(url, null);
-                Matcher m = ROE_PATTERN.matcher(body);
-                if (m.find()) {
-                    result.put(code, Double.parseDouble(m.group(1)));
+            tasks.add(CompletableFuture.runAsync(() -> {
+                String secu = toSecuCode(code);
+                if (secu == null) {
+                    return;
                 }
-            } catch (IOException | NumberFormatException ignored) {
-                // ROE 缺失不影响行情打分
-            }
+                try {
+                    String url = ROE_URL.replace("{SECUCODE}",
+                            URLEncoder.encode(secu, StandardCharsets.UTF_8));
+                    String body = httpGet(url, null);
+                    Matcher m = ROE_PATTERN.matcher(body);
+                    if (m.find()) {
+                        result.put(code, Double.parseDouble(m.group(1)));
+                    }
+                } catch (IOException | NumberFormatException ignored) {
+                    // ROE 缺失不影响行情打分
+                }
+            }, ROE_POOL));
+        }
+        try {
+            CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0]))
+                    .get(ROE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception ignored) {
+            // 整体超时则使用已取到的部分结果
         }
         return result;
     }
