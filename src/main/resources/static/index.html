@@ -492,6 +492,54 @@
             padding-top: 12px;
         }
 
+        .race-bar {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            font-size: 13px;
+            color: var(--text-sub);
+        }
+        .race-bar b { color: var(--text); font-variant-numeric: tabular-nums; }
+        .race-stage {
+            position: relative;
+            width: 100%;
+            max-width: 480px;
+            margin: 10px auto 0;
+        }
+        #raceCanvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: #1f2937;
+            touch-action: none;
+        }
+        .race-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 16px;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, .6);
+            color: #f1f5f9;
+            font-size: 14px;
+            text-align: center;
+        }
+        .race-overlay.hide { display: none; }
+        .race-overlay p { margin: 0; max-width: 280px; }
+        .race-pads {
+            display: flex;
+            gap: 10px;
+            max-width: 480px;
+            margin: 12px auto 0;
+        }
+        .race-pads button { flex: 1; }
+
         @media (max-width: 640px) {
             body { padding: 16px 12px 32px; }
             .card { padding: 16px; }
@@ -503,6 +551,7 @@
             .watch-actions { width: 100%; }
             .watch-actions button { flex: 1; }
             th, td { padding: 9px 10px; }
+            .race-pads button { padding: 12px 0; }
         }
     </style>
 </head>
@@ -518,6 +567,7 @@
         <button class="tab" type="button" data-tab="screen">智能选股</button>
         <button class="tab" type="button" data-tab="compare">策略对比</button>
         <button class="tab" type="button" data-tab="analyze">个股分析</button>
+        <button class="tab" type="button" data-tab="race">赛车小游戏</button>
     </nav>
 
     <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
@@ -649,6 +699,31 @@
         </div>
     </section>
 
+    <section id="panel-race" class="panel">
+        <div class="card">
+            <div class="result-head">
+                <h2>赛车小游戏</h2>
+                <span class="meta">盯盘累了，来一局放松一下</span>
+            </div>
+            <div class="race-bar">
+                <span>得分 <b id="raceScore">0</b></span>
+                <span>最高 <b id="raceBest">0</b></span>
+            </div>
+            <div class="race-stage">
+                <canvas id="raceCanvas" width="480" height="320" aria-label="赛车小游戏画面"></canvas>
+                <div id="raceOverlay" class="race-overlay">
+                    <p id="raceOverlayText">用 ← → 或 A / D 键左右变道，躲避来车。</p>
+                    <button id="raceStartBtn" class="btn-primary" type="button">开始游戏</button>
+                </div>
+            </div>
+            <div class="race-pads">
+                <button id="racePadLeft" class="btn-ghost" type="button">◀ 左</button>
+                <button id="racePadRight" class="btn-ghost" type="button">右 ▶</button>
+            </div>
+            <p class="hint">键盘 ← → / A D 控制变道，手机用下方按钮；撞车即结束，切到其他页签会自动暂停。</p>
+        </div>
+    </section>
+
 <script>
     (function () {
         var API = '/api/stocks/pick';
@@ -681,12 +756,23 @@
         var saveWatchBtn = document.getElementById('saveWatchBtn');
         var clearWatchBtn = document.getElementById('clearWatchBtn');
 
+        var raceCanvas = document.getElementById('raceCanvas');
+        var raceCtx = raceCanvas.getContext('2d');
+        var raceOverlay = document.getElementById('raceOverlay');
+        var raceOverlayText = document.getElementById('raceOverlayText');
+        var raceStartBtn = document.getElementById('raceStartBtn');
+        var raceScoreEl = document.getElementById('raceScore');
+        var raceBestEl = document.getElementById('raceBest');
+        var racePadLeft = document.getElementById('racePadLeft');
+        var racePadRight = document.getElementById('racePadRight');
+
         var loading = false;
         var screenBusy = false;
         var compareBusy = false;
         var analyzeBusy = false;
         var lastResults = [];
         var WATCH_KEY = 'stockPickerWatchlist';
+        var RACE_BEST_KEY = 'stockPickerRaceBest';
 
         function loadWatchlist() {
             try {
@@ -905,6 +991,7 @@
             Array.prototype.forEach.call(document.querySelectorAll('.panel'), function (p) {
                 p.classList.toggle('active', p.id === 'panel-' + name);
             });
+            raceSetPanelActive(name === 'race');
             clearFeedback();
         }
 
@@ -1160,6 +1247,260 @@
             setFeedback('success', '已导出 ' + lastResults.length + ' 条结果为 CSV。');
         }
 
+        // ---------- 赛车小游戏 ----------
+
+        var RACE_W = raceCanvas.width;
+        var RACE_H = raceCanvas.height;
+        var RACE_CAR_W = 34;
+        var RACE_CAR_H = 52;
+        var RACE_PAD = 14;
+        var RACE_COLORS = ['#ef4444', '#f59e0b', '#8b5cf6', '#0ea5e9'];
+
+        var raceState = 'idle';   // idle | playing | paused | over
+        var raceRaf = 0;
+        var raceLast = 0;
+        var raceDist = 0;
+        var raceSpeed = 170;
+        var raceSpawn = 0;
+        var raceScore = 0;
+        var racePlayerX = (RACE_W - RACE_CAR_W) / 2;
+        var raceObstacles = [];
+        var raceKeys = { left: false, right: false };
+        var racePanelActive = false;
+        var raceBest = 0;
+
+        try {
+            raceBest = Number(localStorage.getItem(RACE_BEST_KEY)) || 0;
+        } catch (e) {
+            raceBest = 0;
+        }
+
+        function raceMinX() { return RACE_PAD + 6; }
+        function raceMaxX() { return RACE_W - RACE_PAD - 6 - RACE_CAR_W; }
+        function racePlayerY() { return RACE_H - 18 - RACE_CAR_H; }
+
+        function raceSyncHud() {
+            raceScoreEl.textContent = String(Math.floor(raceScore));
+            raceBestEl.textContent = String(Math.floor(raceBest));
+        }
+
+        function raceSyncOverlay() {
+            if (raceState === 'playing') {
+                raceOverlay.classList.add('hide');
+                return;
+            }
+            raceOverlay.classList.remove('hide');
+            if (raceState === 'paused') {
+                raceOverlayText.textContent = '已暂停，当前得分 ' + Math.floor(raceScore) + '。';
+                raceStartBtn.textContent = '继续游戏';
+            } else if (raceState === 'over') {
+                raceOverlayText.textContent = '撞车了！本局 ' + Math.floor(raceScore)
+                    + ' 分，历史最高 ' + Math.floor(raceBest) + ' 分。';
+                raceStartBtn.textContent = '再来一局';
+            } else {
+                raceOverlayText.textContent = '用 ← → 或 A / D 键左右变道，躲避来车。';
+                raceStartBtn.textContent = '开始游戏';
+            }
+        }
+
+        function raceStopLoop() {
+            if (raceRaf) {
+                cancelAnimationFrame(raceRaf);
+                raceRaf = 0;
+            }
+        }
+
+        function raceReset() {
+            raceDist = 0;
+            raceSpeed = 170;
+            raceSpawn = 0.5;
+            raceScore = 0;
+            raceObstacles = [];
+            racePlayerX = (RACE_W - RACE_CAR_W) / 2;
+            raceKeys.left = false;
+            raceKeys.right = false;
+            raceSyncHud();
+        }
+
+        function racePlay() {
+            raceStopLoop();
+            raceState = 'playing';
+            raceLast = 0;
+            raceSyncOverlay();
+            raceRaf = requestAnimationFrame(raceFrame);
+        }
+
+        function raceStart() {
+            raceReset();
+            racePlay();
+        }
+
+        function racePause() {
+            if (raceState !== 'playing') {
+                return;
+            }
+            raceStopLoop();
+            raceState = 'paused';
+            raceSyncOverlay();
+        }
+
+        function raceGameOver() {
+            raceStopLoop();
+            raceState = 'over';
+            if (raceScore > raceBest) {
+                raceBest = raceScore;
+                try {
+                    localStorage.setItem(RACE_BEST_KEY, String(Math.floor(raceBest)));
+                } catch (e) { /* 存储不可用时静默降级 */ }
+            }
+            raceSyncHud();
+            raceSyncOverlay();
+        }
+
+        function raceFrame(ts) {
+            if (raceState !== 'playing') {
+                return;
+            }
+            var dt = raceLast ? Math.min((ts - raceLast) / 1000, 0.05) : 0;
+            raceLast = ts;
+            raceUpdate(dt);
+            raceDraw();
+            if (raceState === 'playing') {
+                raceRaf = requestAnimationFrame(raceFrame);
+            }
+        }
+
+        function raceUpdate(dt) {
+            raceDist += raceSpeed * dt;
+            raceSpeed = Math.min(430, 170 + raceDist * 0.03);
+            raceScore += dt * (raceSpeed / 12);
+
+            var move = 300 * dt;
+            if (raceKeys.left) { racePlayerX -= move; }
+            if (raceKeys.right) { racePlayerX += move; }
+            racePlayerX = Math.max(raceMinX(), Math.min(raceMaxX(), racePlayerX));
+
+            raceSpawn -= dt;
+            if (raceSpawn <= 0) {
+                raceSpawn = Math.max(0.36, 0.95 - raceDist * 0.00008);
+                raceObstacles.push({
+                    x: raceMinX() + Math.random() * (raceMaxX() - raceMinX()),
+                    y: -RACE_CAR_H,
+                    color: RACE_COLORS[(Math.random() * RACE_COLORS.length) | 0]
+                });
+            }
+
+            var py = racePlayerY();
+            for (var i = raceObstacles.length - 1; i >= 0; i--) {
+                var o = raceObstacles[i];
+                o.y += raceSpeed * dt;
+                if (o.y > RACE_H) {
+                    raceObstacles.splice(i, 1);
+                    continue;
+                }
+                if (racePlayerX < o.x + RACE_CAR_W && racePlayerX + RACE_CAR_W > o.x
+                        && py < o.y + RACE_CAR_H && py + RACE_CAR_H > o.y) {
+                    raceGameOver();
+                    return;
+                }
+            }
+            raceSyncHud();
+        }
+
+        function raceDraw() {
+            raceCtx.fillStyle = '#1f2937';
+            raceCtx.fillRect(0, 0, RACE_W, RACE_H);
+
+            raceCtx.fillStyle = '#334155';
+            raceCtx.fillRect(0, 0, RACE_PAD, RACE_H);
+            raceCtx.fillRect(RACE_W - RACE_PAD, 0, RACE_PAD, RACE_H);
+
+            var offset = raceDist % 52;
+            raceCtx.strokeStyle = 'rgba(226, 232, 240, .38)';
+            raceCtx.lineWidth = 4;
+            for (var lane = 1; lane <= 2; lane++) {
+                var lx = RACE_PAD + (RACE_W - RACE_PAD * 2) * lane / 3;
+                raceCtx.beginPath();
+                for (var y = -52 + offset; y < RACE_H; y += 52) {
+                    raceCtx.moveTo(lx, y);
+                    raceCtx.lineTo(lx, y + 24);
+                }
+                raceCtx.stroke();
+            }
+
+            raceObstacles.forEach(function (o) {
+                raceDrawCar(o.x, o.y, o.color);
+            });
+            raceDrawCar(racePlayerX, racePlayerY(), '#14b8a6');
+        }
+
+        function raceDrawCar(x, y, color) {
+            raceCtx.fillStyle = color;
+            raceCtx.fillRect(x, y, RACE_CAR_W, RACE_CAR_H);
+
+            raceCtx.fillStyle = 'rgba(15, 23, 42, .85)';
+            raceCtx.fillRect(x + 5, y + 9, RACE_CAR_W - 10, 12);
+            raceCtx.fillRect(x + 5, y + RACE_CAR_H - 19, RACE_CAR_W - 10, 10);
+
+            raceCtx.fillStyle = 'rgba(255, 255, 255, .9)';
+            raceCtx.fillRect(x + 3, y + 3, 6, 7);
+            raceCtx.fillRect(x + RACE_CAR_W - 9, y + 3, 6, 7);
+        }
+
+        function raceSetPanelActive(active) {
+            racePanelActive = active;
+            if (!active) {
+                racePause();
+                raceKeys.left = false;
+                raceKeys.right = false;
+            }
+        }
+
+        window.addEventListener('keydown', function (e) {
+            if (!racePanelActive) {
+                return;
+            }
+            var k = e.key;
+            if (k === 'ArrowLeft' || k === 'a' || k === 'A') {
+                raceKeys.left = true;
+                e.preventDefault();
+            } else if (k === 'ArrowRight' || k === 'd' || k === 'D') {
+                raceKeys.right = true;
+                e.preventDefault();
+            } else if (k === ' ' || k === 'Enter') {
+                if (raceState !== 'playing') {
+                    raceStart();
+                }
+                e.preventDefault();
+            }
+        });
+
+        window.addEventListener('keyup', function (e) {
+            var k = e.key;
+            if (k === 'ArrowLeft' || k === 'a' || k === 'A') { raceKeys.left = false; }
+            if (k === 'ArrowRight' || k === 'd' || k === 'D') { raceKeys.right = false; }
+        });
+
+        raceStartBtn.addEventListener('click', function () {
+            if (raceState === 'paused') {
+                racePlay();
+            } else {
+                raceStart();
+            }
+        });
+
+        [['left', racePadLeft], ['right', racePadRight]].forEach(function (pair) {
+            var down = function (e) {
+                raceKeys[pair[0]] = true;
+                e.preventDefault();
+            };
+            var up = function () { raceKeys[pair[0]] = false; };
+            pair[1].addEventListener('pointerdown', down);
+            pair[1].addEventListener('pointerup', up);
+            pair[1].addEventListener('pointerleave', up);
+            pair[1].addEventListener('pointercancel', up);
+        });
+
         submitBtn.addEventListener('click', submit);
         resetBtn.addEventListener('click', reset);
         exportBtn.addEventListener('click', exportCsv);
@@ -1258,6 +1599,9 @@
         });
 
         renderWatchlist();
+        raceSyncHud();
+        raceSyncOverlay();
+        raceDraw();
     })();
 </script>
 </body>
