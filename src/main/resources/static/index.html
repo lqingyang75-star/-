@@ -301,6 +301,12 @@
             border-bottom: 1px solid var(--border);
         }
 
+        th.sortable { cursor: pointer; user-select: none; }
+        th.sortable:hover { color: var(--text); background: var(--primary-soft); }
+        th.sortable .arrow { margin-left: 4px; font-size: 10px; opacity: .35; }
+        th.sortable.active { color: var(--primary); }
+        th.sortable.active .arrow { opacity: 1; }
+
         tbody tr:nth-child(even) { background: var(--stripe); }
         tbody tr:hover { background: var(--primary-soft); }
 
@@ -771,6 +777,8 @@
         var compareBusy = false;
         var analyzeBusy = false;
         var lastResults = [];
+        var sortKey = null;
+        var sortAsc = false;
         var WATCH_KEY = 'stockPickerWatchlist';
         var RACE_BEST_KEY = 'stockPickerRaceBest';
 
@@ -857,11 +865,57 @@
             return score >= 65 ? 'score-good' : (score >= 45 ? 'score-mid' : 'score-low');
         }
 
-        function buildStockTable(list) {
-            var html = '<table><thead><tr>'
-                + '<th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th>'
-                + '<th>PE</th><th>PB</th><th>ROE(%)</th><th>数据状态</th><th>评分 / 理由</th>'
-                + '</tr></thead><tbody>';
+        /** 排序取值：非数字按下限处理，避免 NaN 打乱顺序。 */
+        function numOrFloor(value) {
+            var n = Number(value);
+            return isFinite(n) ? n : -Infinity;
+        }
+
+        var SORT_FIELDS = {
+            price: function (item) { return numOrFloor((item.stock || {}).price); },
+            change: function (item) { return numOrFloor((item.stock || {}).changePercent); },
+            pe: function (item) { return numOrFloor((item.stock || {}).pe); },
+            pb: function (item) { return numOrFloor((item.stock || {}).pb); },
+            roe: function (item) { return numOrFloor((item.stock || {}).roe); },
+            score: function (item) { return numOrFloor(item.score); }
+        };
+
+        function sortHeader(label, key) {
+            if (!SORT_FIELDS[key]) {
+                return '<th>' + label + '</th>';
+            }
+            var active = sortKey === key;
+            var arrow = active && sortAsc ? '▲' : '▼';
+            return '<th class="sortable' + (active ? ' active' : '') + '" data-sort="' + key + '"'
+                + ' title="按' + label + '排序">' + label
+                + '<span class="arrow">' + arrow + '</span></th>';
+        }
+
+        function applySort(list) {
+            var field = SORT_FIELDS[sortKey];
+            if (!field) {
+                return list.slice();
+            }
+            return list.slice().sort(function (a, b) {
+                var va = field(a);
+                var vb = field(b);
+                if (va === vb) {
+                    return 0;
+                }
+                return (va < vb ? -1 : 1) * (sortAsc ? 1 : -1);
+            });
+        }
+
+        function buildStockTable(list, sortable) {
+            var header = sortable
+                ? '<th>代码</th><th>名称</th>'
+                    + sortHeader('最新价', 'price') + sortHeader('涨跌幅', 'change')
+                    + sortHeader('PE', 'pe') + sortHeader('PB', 'pb')
+                    + sortHeader('ROE(%)', 'roe') + '<th>数据状态</th>'
+                    + sortHeader('评分 / 理由', 'score')
+                : '<th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th>'
+                    + '<th>PE</th><th>PB</th><th>ROE(%)</th><th>数据状态</th><th>评分 / 理由</th>';
+            var html = '<table><thead><tr>' + header + '</tr></thead><tbody>';
 
             list.forEach(function (item) {
                 var s = item.stock || {};
@@ -889,9 +943,26 @@
         }
 
         function renderRows(list) {
-            resultBody.innerHTML = buildStockTable(list);
-            lastResults = list;
+            var rows = applySort(list);
+            resultBody.innerHTML = buildStockTable(rows, true);
+            lastResults = rows;
             exportBtn.disabled = false;
+        }
+
+        /** 点击表头切换排序：同一列在降序/升序之间切换，换列则回到降序。 */
+        function toggleSort(key) {
+            if (!SORT_FIELDS[key]) {
+                return;
+            }
+            if (sortKey === key) {
+                sortAsc = !sortAsc;
+            } else {
+                sortKey = key;
+                sortAsc = false;
+            }
+            if (lastResults.length > 0) {
+                renderRows(lastResults);
+            }
         }
 
         function validate() {
@@ -1504,6 +1575,12 @@
         submitBtn.addEventListener('click', submit);
         resetBtn.addEventListener('click', reset);
         exportBtn.addEventListener('click', exportCsv);
+        resultBody.addEventListener('click', function (e) {
+            var th = e.target.closest('th.sortable');
+            if (th) {
+                toggleSort(th.getAttribute('data-sort'));
+            }
+        });
 
         tabs.addEventListener('click', function (e) {
             var btn = e.target.closest('.tab');
