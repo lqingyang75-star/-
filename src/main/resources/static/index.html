@@ -309,6 +309,8 @@
 
         tbody tr:nth-child(even) { background: var(--stripe); }
         tbody tr:hover { background: var(--primary-soft); }
+        .code-cell { color: var(--primary); cursor: pointer; white-space: nowrap; }
+        .code-cell:hover { text-decoration: underline; }
 
         td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
@@ -926,7 +928,8 @@
                 var score = Number(item.score);
 
                 html += '<tr>'
-                    + '<td>' + escapeHtml(s.code) + '</td>'
+                    + '<td class="code-cell" data-code="' + escapeHtml(s.code) + '" title="点击跳转个股分析">'
+                    + escapeHtml(s.code) + '</td>'
                     + '<td>' + escapeHtml(s.name) + '</td>'
                     + '<td class="num">' + fmt(s.price) + '</td>'
                     + '<td class="num ' + changeClass + '">' + sign + fmt(change) + '%</td>'
@@ -1129,7 +1132,8 @@
                 var changeClass = change > 0 ? 'up' : (change < 0 ? 'down' : '');
                 var sign = change > 0 ? '+' : '';
                 html += '<tr>'
-                    + '<td>' + escapeHtml(s.code) + '</td>'
+                    + '<td class="code-cell" data-code="' + escapeHtml(s.code) + '" title="点击跳转个股分析">'
+                    + escapeHtml(s.code) + '</td>'
                     + '<td>' + escapeHtml(s.name) + '</td>'
                     + '<td class="num">' + fmt(s.price) + '</td>'
                     + '<td class="num ' + changeClass + '">' + sign + fmt(change) + '%</td>';
@@ -1581,6 +1585,24 @@
                 toggleSort(th.getAttribute('data-sort'));
             }
         });
+
+        /** 点击结果表中的股票代码：跳到个股分析页签并填入代码。 */
+        function jumpToAnalyze(e) {
+            var cell = e.target.closest('.code-cell');
+            if (!cell) {
+                return;
+            }
+            var code = (cell.getAttribute('data-code') || '').trim();
+            if (!/^\d{6}$/.test(code)) {
+                return;
+            }
+            analyzeCode.value = code;
+            activateTab('analyze');
+            analyzeCode.focus();
+        }
+        resultBody.addEventListener('click', jumpToAnalyze);
+        screenBody.addEventListener('click', jumpToAnalyze);
+        compareBody.addEventListener('click', jumpToAnalyze);
 
         tabs.addEventListener('click', function (e) {
             var btn = e.target.closest('.tab');
