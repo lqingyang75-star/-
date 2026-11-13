@@ -1,5 +1,7 @@
 package com.example.stockpicker.system;
 
+import com.example.stockpicker.finance.entity.FinCategory;
+import com.example.stockpicker.finance.repository.FinCategoryRepository;
 import com.example.stockpicker.system.entity.Menu;
 import com.example.stockpicker.system.entity.Role;
 import com.example.stockpicker.system.entity.User;
@@ -29,19 +31,23 @@ public class DataInitializer implements CommandLineRunner {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final MenuRepository menuRepository;
+    private final FinCategoryRepository categoryRepository;
     private final PasswordEncoder passwordEncoder;
 
     public DataInitializer(UserRepository userRepository, RoleRepository roleRepository,
-                           MenuRepository menuRepository, PasswordEncoder passwordEncoder) {
+                           MenuRepository menuRepository, FinCategoryRepository categoryRepository,
+                           PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.menuRepository = menuRepository;
+        this.categoryRepository = categoryRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
     @Override
     public void run(String... args) {
         if (userRepository.count() > 0) {
+            seedCategories();
             return;
         }
         List<Menu> all = new ArrayList<>();
@@ -101,6 +107,34 @@ public class DataInitializer implements CommandLineRunner {
         userRepository.save(account);
 
         log.info("初始数据已写入：账号 admin / admin123，菜单与按钮共 {} 条", all.size());
+        seedCategories();
+    }
+
+    /**
+     * 默认收支分类。老库已存在分类时跳过，可重复启动。
+     */
+    private void seedCategories() {
+        if (categoryRepository.count() > 0) {
+            return;
+        }
+        User admin = userRepository.findByUsername("admin").orElse(null);
+        if (admin == null) {
+            return;
+        }
+        String[][] defaults = {
+                {"工资", "1"}, {"股息", "1"}, {"卖出股票", "1"}, {"其他收入", "1"},
+                {"餐饮", "2"}, {"交通", "2"}, {"房租", "2"}, {"日用", "2"}, {"买入股票", "2"}, {"其他支出", "2"}
+        };
+        int sort = 1;
+        for (String[] item : defaults) {
+            FinCategory category = new FinCategory();
+            category.setUserId(admin.getId());
+            category.setName(item[0]);
+            category.setType(Integer.parseInt(item[1]));
+            category.setSort(sort++);
+            categoryRepository.save(category);
+        }
+        log.info("默认收支分类已写入：{} 条", defaults.length);
     }
 
     private Menu saveMenu(List<Menu> bucket, Long parentId, String name, int type,

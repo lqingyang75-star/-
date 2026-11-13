@@ -1,1 +1,0 @@
-import{e as s,f as a,r as e,o as r,c as _,w as l,b as p}from"./index-CqfLGrSX.js";const f={__name:"UnderConstruction",setup(u){const t=s(),o=a(()=>t.meta.title||"该模块");return(m,d)=>{const n=e("el-empty"),c=e("el-card");return r(),_(c,{shadow:"never"},{default:l(()=>[p(n,{description:`「${o.value}」将在后续阶段实现`},null,8,["description"])]),_:1})}}};export{f as default};
