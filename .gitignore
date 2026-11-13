@@ -5,3 +5,13 @@ target/
 *.iml
 .vscode/
 .DS_Store
+
+# 本地便携构建工具，不进版本库
+.tools/
+# H2 本地开发数据目录
+data/
+# 前端依赖与构建产物
+frontend/node_modules/
+node_modules/
+.npm/
+dist/
