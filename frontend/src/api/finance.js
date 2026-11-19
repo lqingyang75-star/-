@@ -37,3 +37,25 @@ export function updateRecord(id, data) {
 export function deleteRecord(id) {
   return request.delete(`/finance/records/${id}`)
 }
+
+export function batchDeleteRecords(ids) {
+  return request.post('/finance/records/batch-delete', { ids })
+}
+
+// 导出 Excel，返回二进制内容
+export function exportRecords(params) {
+  return request.get('/finance/records/export', { params, responseType: 'blob' })
+}
+
+// ---------- 看板图表 ----------
+export function monthlyTrend(months = 6) {
+  return request.get('/finance/records/chart/monthly-trend', { params: { months } })
+}
+
+export function weeklyBar() {
+  return request.get('/finance/records/chart/weekly-bar')
+}
+
+export function categoryPie(params) {
+  return request.get('/finance/records/chart/category-pie', { params })
+}

@@ -70,3 +70,8 @@ export function updateMenu(id, data) {
 export function deleteMenu(id) {
   return request.delete(`/menus/${id}`)
 }
+
+// ---------- 操作日志 ----------
+export function pageOperLogs(params) {
+  return request.get('/system/logs', { params })
+}

@@ -3,10 +3,12 @@ package com.example.stockpicker.finance.service;
 import com.example.stockpicker.common.BizException;
 import com.example.stockpicker.common.PageResult;
 import com.example.stockpicker.finance.dto.CategoryForm;
+import com.example.stockpicker.finance.dto.CategoryPiePoint;
 import com.example.stockpicker.finance.dto.RecordForm;
 import com.example.stockpicker.finance.dto.RecordQuery;
 import com.example.stockpicker.finance.dto.RecordVO;
 import com.example.stockpicker.finance.dto.StatResult;
+import com.example.stockpicker.finance.dto.TrendPoint;
 import com.example.stockpicker.finance.entity.FinCategory;
 import com.example.stockpicker.finance.entity.FinRecord;
 import com.example.stockpicker.finance.repository.FinCategoryRepository;
@@ -23,6 +25,8 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -135,6 +139,30 @@ public class FinanceService {
         recordRepository.delete(requireRecord(userId, id));
     }
 
+    @Transactional
+    public void deleteRecords(Long userId, List<Long> ids) {
+        ids.stream().distinct().forEach(id -> recordRepository.delete(requireRecord(userId, id)));
+    }
+
+    /**
+     * 导出数据：传 ids 时只导出选中记录，否则按当前筛选条件导出全量。
+     */
+    @Transactional(readOnly = true)
+    public List<RecordVO> exportRecords(Long userId, RecordQuery query, List<Long> ids) {
+        Map<Long, FinCategory> categories = categoryMap(userId);
+        List<FinRecord> records;
+        if (ids != null && !ids.isEmpty()) {
+            records = recordRepository.findAllById(ids).stream()
+                    .filter(r -> r.getUserId().equals(userId))
+                    .toList();
+        } else {
+            Sort sort = Sort.by(Sort.Direction.DESC, "recordDate")
+                    .and(Sort.by(Sort.Direction.DESC, "id"));
+            records = recordRepository.findAll(buildSpec(userId, query), sort);
+        }
+        return records.stream().map(r -> toVO(r, categories)).toList();
+    }
+
     // ==================== 统计 ====================
 
     @Transactional(readOnly = true)
@@ -160,6 +188,52 @@ public class FinanceService {
                 .sorted(Comparator.comparing(StatResult.CategorySum::amount).reversed())
                 .toList();
         return new StatResult(income, expense, income.subtract(expense), sums);
+    }
+
+    /**
+     * 近 N 个月收入/支出趋势，供看板折线图使用。
+     */
+    @Transactional(readOnly = true)
+    public List<TrendPoint> monthlyTrend(Long userId, int months) {
+        int count = Math.min(Math.max(months, 1), 24);
+        YearMonth current = YearMonth.now();
+        List<TrendPoint> points = new ArrayList<>();
+        for (int i = count - 1; i >= 0; i--) {
+            YearMonth month = current.minusMonths(i);
+            LocalDate start = month.atDay(1);
+            LocalDate end = month.atEndOfMonth();
+            points.add(new TrendPoint(month.toString(),
+                    recordRepository.sumAmount(userId, 1, start, end),
+                    recordRepository.sumAmount(userId, 2, start, end)));
+        }
+        return points;
+    }
+
+    /**
+     * 近 7 天收入/支出，供看板柱状图使用。
+     */
+    @Transactional(readOnly = true)
+    public List<TrendPoint> weeklyTrend(Long userId) {
+        LocalDate today = LocalDate.now();
+        List<TrendPoint> points = new ArrayList<>();
+        DateTimeFormatter labelFormat = DateTimeFormatter.ofPattern("MM-dd");
+        for (int i = 6; i >= 0; i--) {
+            LocalDate day = today.minusDays(i);
+            points.add(new TrendPoint(day.format(labelFormat),
+                    recordRepository.sumAmount(userId, 1, day, day),
+                    recordRepository.sumAmount(userId, 2, day, day)));
+        }
+        return points;
+    }
+
+    /**
+     * 分类占比，供看板饼图使用，复用区间统计结果。
+     */
+    @Transactional(readOnly = true)
+    public List<CategoryPiePoint> categoryPie(Long userId, RecordQuery query) {
+        return stat(userId, query).categories().stream()
+                .map(c -> new CategoryPiePoint(c.categoryName(), c.amount(), c.type()))
+                .toList();
     }
 
     // ==================== 内部方法 ====================

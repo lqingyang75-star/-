@@ -73,8 +73,36 @@
     <el-card shadow="never">
       <div class="toolbar">
         <el-button v-permission="'fin:record:add'" type="primary" @click="openCreate">新增记录</el-button>
+        <el-button v-permission="'fin:record:export'" :loading="exporting" @click="onExport(false)">
+          导出 Excel
+        </el-button>
+        <el-button
+          v-permission="'fin:record:export'"
+          :disabled="!selectedIds.length"
+          :loading="exporting"
+          @click="onExport(true)"
+        >
+          导出选中
+        </el-button>
+        <el-button
+          v-permission="'fin:record:batch'"
+          type="danger"
+          plain
+          :disabled="!selectedIds.length"
+          @click="onBatchDelete"
+        >
+          批量删除<span v-if="selectedIds.length">（{{ selectedIds.length }}）</span>
+        </el-button>
       </div>
-      <el-table v-loading="loading" :data="rows" border stripe>
+      <el-table
+        ref="tableRef"
+        v-loading="loading"
+        :data="rows"
+        border
+        stripe
+        @selection-change="onSelectionChange"
+      >
+        <el-table-column type="selection" width="48" />
         <el-table-column prop="recordDate" label="日期" width="110" />
         <el-table-column label="类型" width="80">
           <template #default="{ row }">
@@ -209,8 +237,10 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  batchDeleteRecords,
   createRecord,
   deleteRecord,
+  exportRecords,
   listCategories,
   pageRecords,
   statRecords,
@@ -219,11 +249,14 @@ import {
 
 const loading = ref(false)
 const saving = ref(false)
+const exporting = ref(false)
 const dialogVisible = ref(false)
 const formRef = ref(null)
+const tableRef = ref(null)
 const rows = ref([])
 const total = ref(0)
 const categories = ref([])
+const selectedIds = ref([])
 const stat = reactive({ totalIncome: 0, totalExpense: 0, balance: 0 })
 
 const filters = reactive({
@@ -455,6 +488,48 @@ async function onDelete(row) {
   await deleteRecord(row.id)
   ElMessage.success('已删除')
   await Promise.all([loadRecords(), loadStat()])
+}
+
+function onSelectionChange(selection) {
+  selectedIds.value = selection.map((row) => row.id)
+}
+
+async function onBatchDelete() {
+  if (!selectedIds.value.length) return
+  try {
+    await ElMessageBox.confirm(
+      `确定删除选中的 ${selectedIds.value.length} 条记录吗？`,
+      '批量删除',
+      { type: 'warning' }
+    )
+  } catch (e) {
+    return
+  }
+  await batchDeleteRecords(selectedIds.value)
+  ElMessage.success('已删除')
+  tableRef.value?.clearSelection()
+  await Promise.all([loadRecords(), loadStat()])
+}
+
+async function onExport(onlySelected) {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    const query = buildQuery()
+    delete query.page
+    delete query.size
+    const params = onlySelected ? { ids: selectedIds.value.join(',') } : query
+    const blob = await exportRecords(params)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = '收支记录.xlsx'
+    link.click()
+    URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } finally {
+    exporting.value = false
+  }
 }
 
 onMounted(async () => {

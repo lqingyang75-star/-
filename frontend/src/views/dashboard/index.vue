@@ -21,18 +21,40 @@
       </el-col>
     </el-row>
 
-    <el-card shadow="never" class="tip-card">
-      <p>阶段一已完成：JWT 登录、RBAC 权限模型、动态菜单与路由、软件结构按业务域分包。</p>
-      <p>接下来的阶段二为财务收支模块（记录、分类、筛选、统计），阶段四补充首页图表、Excel 导出与操作日志。</p>
+    <el-card shadow="never" class="chart-card">
+      <template #header>近 6 个月收支趋势</template>
+      <div ref="trendRef" v-loading="loading" class="chart" />
     </el-card>
+
+    <el-row :gutter="16">
+      <el-col :span="12">
+        <el-card shadow="never" class="chart-card">
+          <template #header>近 7 天收支</template>
+          <div ref="weeklyRef" v-loading="loading" class="chart" />
+        </el-card>
+      </el-col>
+      <el-col :span="12">
+        <el-card shadow="never" class="chart-card">
+          <template #header>分类占比</template>
+          <div ref="pieRef" v-loading="loading" class="chart" />
+        </el-card>
+      </el-col>
+    </el-row>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import * as echarts from 'echarts'
 import { useUserStore } from '@/store/user'
+import { categoryPie, monthlyTrend, weeklyBar } from '@/api/finance'
 
 const store = useUserStore()
+const loading = ref(false)
+const trendRef = ref(null)
+const weeklyRef = ref(null)
+const pieRef = ref(null)
+let charts = []
 
 const menuCount = computed(() => {
   let count = 0
@@ -44,6 +66,107 @@ const menuCount = computed(() => {
   }
   walk(store.menuTree)
   return count
+})
+
+function moneyAxis() {
+  return { type: 'value', axisLabel: { formatter: (v) => `${v}` } }
+}
+
+function lineOption(points) {
+  return {
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['收入', '支出'], right: 0 },
+    grid: { left: 10, right: 10, bottom: 0, top: 36, containLabel: true },
+    xAxis: { type: 'category', data: points.map((p) => p.label) },
+    yAxis: moneyAxis(),
+    series: [
+      {
+        name: '收入',
+        type: 'line',
+        smooth: true,
+        showSymbol: false,
+        data: points.map((p) => Number(p.income || 0)),
+        itemStyle: { color: '#16a34a' }
+      },
+      {
+        name: '支出',
+        type: 'line',
+        smooth: true,
+        showSymbol: false,
+        data: points.map((p) => Number(p.expense || 0)),
+        itemStyle: { color: '#dc2626' }
+      }
+    ]
+  }
+}
+
+function barOption(points) {
+  return {
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['收入', '支出'], right: 0 },
+    grid: { left: 10, right: 10, bottom: 0, top: 36, containLabel: true },
+    xAxis: { type: 'category', data: points.map((p) => p.label) },
+    yAxis: moneyAxis(),
+    series: [
+      { name: '收入', type: 'bar', data: points.map((p) => Number(p.income || 0)), itemStyle: { color: '#16a34a' } },
+      { name: '支出', type: 'bar', data: points.map((p) => Number(p.expense || 0)), itemStyle: { color: '#dc2626' } }
+    ]
+  }
+}
+
+function pieOption(points) {
+  return {
+    tooltip: { trigger: 'item', formatter: '{b}<br/>{c} 元（{d}%）' },
+    legend: { bottom: 0 },
+    series: [
+      {
+        type: 'pie',
+        radius: ['40%', '65%'],
+        center: ['50%', '45%'],
+        avoidLabelOverlap: true,
+        label: { formatter: '{b}\n{d}%' },
+        data: points.map((p) => ({ name: p.name, value: Number(p.value || 0) }))
+      }
+    ]
+  }
+}
+
+function renderChart(container, option) {
+  if (!container) return
+  const chart = echarts.init(container)
+  chart.setOption(option)
+  charts.push(chart)
+}
+
+function onResize() {
+  charts.forEach((chart) => chart.resize())
+}
+
+async function loadCharts() {
+  loading.value = true
+  try {
+    const [trend, weekly, pie] = await Promise.all([
+      monthlyTrend(6),
+      weeklyBar(),
+      categoryPie({})
+    ])
+    renderChart(trendRef.value, lineOption(trend || []))
+    renderChart(weeklyRef.value, barOption(weekly || []))
+    renderChart(pieRef.value, pieOption(pie || []))
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(async () => {
+  await loadCharts()
+  window.addEventListener('resize', onResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onResize)
+  charts.forEach((chart) => chart.dispose())
+  charts = []
 })
 </script>
 
@@ -59,10 +182,11 @@ const menuCount = computed(() => {
   font-weight: 600;
 }
 
-.tip-card {
+.chart-card {
   margin-top: 16px;
-  line-height: 1.9;
-  color: #606266;
-  font-size: 14px;
+}
+
+.chart {
+  height: 300px;
 }
 </style>
