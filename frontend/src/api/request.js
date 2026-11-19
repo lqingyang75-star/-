@@ -18,11 +18,15 @@ request.interceptors.response.use(
   (response) => {
     const body = response.data
     // 后端统一返回体：code=0 成功
-    if (body && typeof body.code === 'number' && body.code !== 0) {
-      ElMessage.error(body.message || '请求失败')
-      return Promise.reject(body)
+    if (body && typeof body.code === 'number') {
+      if (body.code !== 0) {
+        ElMessage.error(body.message || '请求失败')
+        return Promise.reject(body)
+      }
+      return body.data
     }
-    return body ? body.data : null
+    // 兼容未包装的历史接口（如 /api/stocks/pick 直接返回数组）
+    return body
   },
   (error) => {
     const status = error.response?.status
