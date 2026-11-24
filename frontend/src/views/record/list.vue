@@ -1,5 +1,44 @@
 <template>
   <div>
+    <!-- 月度概览：固定本月 vs 上月，不受下方筛选影响 -->
+    <el-card shadow="never" class="month-card">
+      <div class="month-head">
+        <span class="month-title">{{ monthTitle }} 月度概览</span>
+        <span class="muted month-tip">与上月对比，不受下方筛选条件影响</span>
+      </div>
+      <el-row :gutter="16">
+        <el-col :span="8">
+          <div class="month-item">
+            <div class="stat-label">本月收入</div>
+            <div class="stat-value income">{{ formatMoney(monthStat.income) }}</div>
+            <div class="month-diff" :class="diffOf(monthStat.income, monthStat.prevIncome, true).cls">
+              较上月 {{ diffOf(monthStat.income, monthStat.prevIncome, true).text }}
+            </div>
+          </div>
+        </el-col>
+        <el-col :span="8">
+          <div class="month-item">
+            <div class="stat-label">本月支出</div>
+            <div class="stat-value expense">{{ formatMoney(monthStat.expense) }}</div>
+            <div class="month-diff" :class="diffOf(monthStat.expense, monthStat.prevExpense, false).cls">
+              较上月 {{ diffOf(monthStat.expense, monthStat.prevExpense, false).text }}
+            </div>
+          </div>
+        </el-col>
+        <el-col :span="8">
+          <div class="month-item">
+            <div class="stat-label">本月结余</div>
+            <div class="stat-value" :class="monthBalance >= 0 ? 'income' : 'expense'">
+              {{ formatMoney(monthBalance) }}
+            </div>
+            <div class="month-diff" :class="diffOf(monthBalance, monthPrevBalance, true).cls">
+              较上月 {{ diffOf(monthBalance, monthPrevBalance, true).text }}
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+    </el-card>
+
     <!-- 统计卡片 -->
     <el-row :gutter="16" class="stat-row">
       <el-col :span="8">
@@ -242,6 +281,7 @@ import {
   deleteRecord,
   exportRecords,
   listCategories,
+  monthlyTrend,
   pageRecords,
   statRecords,
   updateRecord
@@ -258,6 +298,8 @@ const total = ref(0)
 const categories = ref([])
 const selectedIds = ref([])
 const stat = reactive({ totalIncome: 0, totalExpense: 0, balance: 0 })
+const monthStat = reactive({ income: 0, expense: 0, prevIncome: 0, prevExpense: 0 })
+const monthTitle = ref('')
 
 const filters = reactive({
   type: null,
@@ -327,6 +369,44 @@ const previewAmount = computed(() => {
 function formatMoney(value) {
   const num = Number(value || 0)
   return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+const monthBalance = computed(() => Number(monthStat.income) - Number(monthStat.expense))
+const monthPrevBalance = computed(() => Number(monthStat.prevIncome) - Number(monthStat.prevExpense))
+
+/**
+ * 计算环比变化。gainWhenUp：true 表示数值上升是好事（收入、结余），false 表示上升是坏事（支出）。
+ */
+function diffOf(current, previous, gainWhenUp) {
+  const cur = Number(current || 0)
+  const prev = Number(previous || 0)
+  if (prev === 0) {
+    return cur === 0
+      ? { text: '持平', cls: 'flat' }
+      : { text: cur > 0 ? '新增' : '减少', cls: (cur > 0) === gainWhenUp ? 'good' : 'bad' }
+  }
+  const rate = ((cur - prev) / Math.abs(prev)) * 100
+  if (Math.abs(rate) < 0.005) {
+    return { text: '持平', cls: 'flat' }
+  }
+  const up = rate > 0
+  const sign = up ? '+' : ''
+  return {
+    text: `${sign}${rate.toFixed(1)}%`,
+    cls: up === gainWhenUp ? 'good' : 'bad'
+  }
+}
+
+async function loadMonthStat() {
+  const points = await monthlyTrend(2)
+  const list = Array.isArray(points) ? points : []
+  const current = list[list.length - 1] || {}
+  const previous = list[list.length - 2] || {}
+  monthStat.income = Number(current.income || 0)
+  monthStat.expense = Number(current.expense || 0)
+  monthStat.prevIncome = Number(previous.income || 0)
+  monthStat.prevExpense = Number(previous.expense || 0)
+  monthTitle.value = current.label || ''
 }
 
 function feeOf(row) {
@@ -473,7 +553,7 @@ async function onSubmit() {
       ElMessage.success('已新增')
     }
     dialogVisible.value = false
-    await Promise.all([loadRecords(), loadStat()])
+    await Promise.all([loadRecords(), loadStat(), loadMonthStat()])
   } finally {
     saving.value = false
   }
@@ -487,7 +567,7 @@ async function onDelete(row) {
   }
   await deleteRecord(row.id)
   ElMessage.success('已删除')
-  await Promise.all([loadRecords(), loadStat()])
+  await Promise.all([loadRecords(), loadStat(), loadMonthStat()])
 }
 
 function onSelectionChange(selection) {
@@ -508,7 +588,7 @@ async function onBatchDelete() {
   await batchDeleteRecords(selectedIds.value)
   ElMessage.success('已删除')
   tableRef.value?.clearSelection()
-  await Promise.all([loadRecords(), loadStat()])
+  await Promise.all([loadRecords(), loadStat(), loadMonthStat()])
 }
 
 async function onExport(onlySelected) {
@@ -534,11 +614,53 @@ async function onExport(onlySelected) {
 
 onMounted(async () => {
   await loadCategories()
-  await Promise.all([loadRecords(), loadStat()])
+  await Promise.all([loadRecords(), loadStat(), loadMonthStat()])
 })
 </script>
 
 <style scoped>
+.month-card {
+  margin-bottom: 16px;
+}
+
+.month-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.month-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.month-tip {
+  font-size: 12px;
+}
+
+.month-item {
+  padding: 4px 0;
+}
+
+.month-diff {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.month-diff.good {
+  color: #16a34a;
+}
+
+.month-diff.bad {
+  color: #dc2626;
+}
+
+.month-diff.flat {
+  color: #909399;
+}
+
 .stat-row {
   margin-bottom: 16px;
 }
