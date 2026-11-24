@@ -48,6 +48,7 @@ public class DataInitializer implements CommandLineRunner {
     public void run(String... args) {
         if (userRepository.count() > 0) {
             seedCategories();
+            seedWatchlistMenu();
             return;
         }
         List<Menu> all = new ArrayList<>();
@@ -108,6 +109,30 @@ public class DataInitializer implements CommandLineRunner {
 
         log.info("初始数据已写入：账号 admin / admin123，菜单与按钮共 {} 条", all.size());
         seedCategories();
+        seedWatchlistMenu();
+    }
+
+    /**
+     * 自选股菜单。老库首次升级时补建并授予超级管理员，已存在则跳过。
+     */
+    private void seedWatchlistMenu() {
+        List<Menu> existing = menuRepository.findAllByOrderBySortAscIdAsc();
+        boolean present = existing.stream().anyMatch(m -> "stock:watch:list".equals(m.getPerms()));
+        if (present) {
+            return;
+        }
+        Menu parent = existing.stream()
+                .filter(m -> Integer.valueOf(1).equals(m.getType()) && "/stock".equals(m.getPath()))
+                .findFirst()
+                .orElse(null);
+        if (parent == null) {
+            return;
+        }
+        Menu watch = createMenu(parent.getId(), "自选股", 2, "/stock/watchlist",
+                "stock/watchlist", "stock:watch:list", 2);
+        createMenu(watch.getId(), "添加自选", 3, null, null, "stock:watch:add", 1);
+        createMenu(watch.getId(), "移除自选", 3, null, null, "stock:watch:delete", 2);
+        log.info("已补建自选股菜单与按钮权限");
     }
 
     /**
@@ -139,6 +164,14 @@ public class DataInitializer implements CommandLineRunner {
 
     private Menu saveMenu(List<Menu> bucket, Long parentId, String name, int type,
                           String path, String component, String perms, int sort) {
+        Menu saved = createMenu(parentId, name, type, path, component, perms, sort);
+        bucket.add(saved);
+        return saved;
+    }
+
+    /** 新建菜单并同步授予超级管理员角色，供老库升级补建使用。 */
+    private Menu createMenu(Long parentId, String name, int type,
+                            String path, String component, String perms, int sort) {
         Menu menu = new Menu();
         menu.setParentId(parentId);
         menu.setName(name);
@@ -149,7 +182,7 @@ public class DataInitializer implements CommandLineRunner {
         menu.setSort(sort);
         menu.setStatus(1);
         Menu saved = menuRepository.save(menu);
-        bucket.add(saved);
+        roleRepository.grantMenuToAdmin(saved.getId());
         return saved;
     }
 }

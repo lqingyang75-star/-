@@ -4,3 +4,20 @@ import request from './request'
 export function pickStocks(params) {
   return request.get('/stocks/pick', { params }).then((data) => data || [])
 }
+
+// ---------- 自选股 ----------
+export function listWatchlist() {
+  return request.get('/stocks/watchlist').then((data) => data || [])
+}
+
+export function listWatchCodes() {
+  return request.get('/stocks/watchlist/codes').then((data) => data || [])
+}
+
+export function addWatch(code) {
+  return request.post('/stocks/watchlist', { code })
+}
+
+export function removeWatch(code) {
+  return request.delete(`/stocks/watchlist/${code}`)
+}

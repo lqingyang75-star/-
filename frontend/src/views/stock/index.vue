@@ -21,6 +21,29 @@
 
     <el-card shadow="never">
       <el-table v-loading="loading" :data="rows" border stripe empty-text="没有查询到行情数据">
+        <el-table-column label="自选" width="100" fixed="left">
+          <template #default="{ row }">
+            <el-button
+              v-if="isWatched(row.stock.code)"
+              v-permission="'stock:watch:delete'"
+              link
+              type="warning"
+              :disabled="watchPending"
+              @click="toggleWatch(row)"
+            >
+              ★ 已自选
+            </el-button>
+            <el-button
+              v-else
+              v-permission="'stock:watch:add'"
+              link
+              :disabled="watchPending"
+              @click="toggleWatch(row)"
+            >
+              ☆ 加自选
+            </el-button>
+          </template>
+        </el-table-column>
         <el-table-column prop="stock.code" label="代码" width="100" />
         <el-table-column prop="stock.name" label="名称" width="120" />
         <el-table-column prop="stock.price" label="最新价" width="110" sortable>
@@ -53,11 +76,40 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { pickStocks } from '@/api/stock'
+import { ElMessage } from 'element-plus'
+import { addWatch, listWatchCodes, pickStocks, removeWatch } from '@/api/stock'
 
 const loading = ref(false)
+const watchPending = ref(false)
 const codes = ref('')
 const rows = ref([])
+const watchCodes = ref([])
+
+function isWatched(code) {
+  return watchCodes.value.includes(code)
+}
+
+async function loadWatchCodes() {
+  watchCodes.value = await listWatchCodes()
+}
+
+async function toggleWatch(row) {
+  if (watchPending.value) return
+  const code = row.stock.code
+  watchPending.value = true
+  try {
+    if (isWatched(code)) {
+      await removeWatch(code)
+      ElMessage.success('已移出自选')
+    } else {
+      await addWatch(code)
+      ElMessage.success('已加入自选')
+    }
+    await loadWatchCodes()
+  } finally {
+    watchPending.value = false
+  }
+}
 
 function format(value, digits) {
   return Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '—'
@@ -90,7 +142,9 @@ function onReset() {
   load()
 }
 
-onMounted(load)
+onMounted(async () => {
+  await Promise.all([load(), loadWatchCodes().catch(() => {})])
+})
 </script>
 
 <style scoped>
