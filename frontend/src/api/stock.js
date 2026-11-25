@@ -10,6 +10,11 @@ export function analyzeStock(code) {
   return request.get('/stocks/analyze', { params: { code } })
 }
 
+// 多策略对比：对同一批股票分别按价值/成长/均衡策略打分
+export function compareStocks(codes) {
+  return request.get('/stocks/compare', { params: { codes } })
+}
+
 // ---------- 自选股 ----------
 export function listWatchlist() {
   return request.get('/stocks/watchlist').then((data) => data || [])

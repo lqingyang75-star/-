@@ -120,7 +120,10 @@
           </div>
           <div class="an-block">
             <div class="an-label">操作建议</div>
-            <p>{{ analysis.suggestion || '—' }}</p>
+            <ul v-if="analysis.suggestions && analysis.suggestions.length" class="an-suggestions">
+              <li v-for="(item, index) in analysis.suggestions" :key="index">{{ item }}</li>
+            </ul>
+            <p v-else>暂无操作建议</p>
           </div>
         </template>
         <el-empty v-else-if="!analyzeLoading" description="暂无分析结果" />
@@ -311,5 +314,17 @@ onMounted(async () => {
   font-size: 13px;
   line-height: 1.7;
   color: #e6a23c;
+}
+
+.an-suggestions {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #303133;
+}
+
+.an-suggestions li {
+  margin-bottom: 6px;
 }
 </style>

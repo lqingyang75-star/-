@@ -108,7 +108,7 @@ public class StockPickerService {
                 valuationText(stock),
                 profitabilityText(stock),
                 risks(stock),
-                suggestion(rating));
+                suggestion(stock, rating));
     }
 
     // ---------- 打分 ----------
@@ -218,19 +218,56 @@ public class StockPickerService {
         return list;
     }
 
-    private String suggestion(String rating) {
+    private List<String> suggestion(Stock stock, String rating) {
+        List<String> list = new ArrayList<>();
         switch (rating) {
             case "强烈推荐":
-                return "基本面与估值匹配良好，可重点纳入关注池，建议分批建仓。";
+                list.add("基本面与估值匹配良好，可重点纳入关注池，建议分批建仓。");
+                break;
             case "推荐":
-                return "综合表现较好，可纳入关注池，逢回调分批参与。";
+                list.add("综合表现较好，可纳入关注池，逢回调分批参与。");
+                break;
             case "中性":
-                return "指标中规中矩，建议结合行业景气度与大盘走势再决策。";
+                list.add("指标中规中矩，建议结合行业景气度与大盘走势再决策。");
+                break;
             case "谨慎":
-                return "存在一定风险因素，建议谨慎参与或等待更好的价格。";
+                list.add("存在一定风险因素，建议谨慎参与或等待更好的价格。");
+                break;
             default:
-                return "当前指标不佳，建议回避，等待基本面改善。";
+                list.add("当前指标不佳，建议回避，等待基本面改善。");
         }
+
+        // 估值维度
+        if (stock.pe() > 0 && stock.pe() < 15) {
+            list.add("估值处于低位（PE " + stock.pe() + "），若基本面无恶化，可考虑左侧逐步布局。");
+        } else if (stock.pe() > 50) {
+            list.add("估值偏高（PE " + stock.pe() + "），建议控制仓位，避免追高，等待估值回归。");
+        }
+        if (stock.pb() > 8) {
+            list.add("市净率偏高（PB " + stock.pb() + "），需关注资产质量与盈利兑现能力。");
+        }
+
+        // 盈利维度
+        if (stock.roe() >= 20) {
+            list.add("盈利能力优秀（ROE " + stock.roe() + "%），适合作为中长期核心持仓跟踪。");
+        } else if (stock.roe() <= 0) {
+            list.add("当前盈利为负（ROE " + stock.roe() + "%），需确认亏损是阶段性还是趋势性，再决定是否参与。");
+        }
+
+        // 动量/仓位维度
+        if (stock.changePercent() >= 5) {
+            list.add("当日涨幅较大（" + stock.changePercent() + "%），短期注意冲高回落，不建议追涨，可等回调企稳。");
+        } else if (stock.changePercent() <= -5) {
+            list.add("当日跌幅较大（" + stock.changePercent() + "%），先观察是否有利好/利空消息，避免急于抄底。");
+        }
+
+        // 操作纪律
+        if (rating.equals("强烈推荐") || rating.equals("推荐")) {
+            list.add("建议采用分批建仓策略（如 3~4 成起步），单只持仓占比控制在合理范围，并设置止损位。");
+        } else if (rating.equals("中性") || rating.equals("谨慎")) {
+            list.add("建议小仓位跟踪验证，或加入自选观察一段时间，待指标改善后再加仓。");
+        }
+        return list;
     }
 
     private static List<String> splitCodes(String codes) {

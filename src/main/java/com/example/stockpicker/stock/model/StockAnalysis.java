@@ -11,7 +11,7 @@ import java.util.List;
  * @param valuation     估值评价
  * @param profitability 盈利评价
  * @param risks         风险提示列表
- * @param suggestion    操作建议
+ * @param suggestions   操作建议列表（按评级/估值/盈利/动量/仓位维度生成）
  */
 public record StockAnalysis(
         Stock stock,
@@ -20,6 +20,6 @@ public record StockAnalysis(
         String valuation,
         String profitability,
         List<String> risks,
-        String suggestion
+        List<String> suggestions
 ) {
 }
