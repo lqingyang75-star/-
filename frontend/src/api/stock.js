@@ -5,6 +5,11 @@ export function pickStocks(params) {
   return request.get('/stocks/pick', { params }).then((data) => data || [])
 }
 
+// 个股诊断：生成单只股票的分析报告
+export function analyzeStock(code) {
+  return request.get('/stocks/analyze', { params: { code } })
+}
+
 // ---------- 自选股 ----------
 export function listWatchlist() {
   return request.get('/stocks/watchlist').then((data) => data || [])
