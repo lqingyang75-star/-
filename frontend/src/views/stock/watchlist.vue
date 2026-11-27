@@ -49,8 +49,9 @@
           <template #default="{ row }">{{ format(row.score, 2) }}</template>
         </el-table-column>
         <el-table-column prop="reason" label="命中理由" min-width="220" show-overflow-tooltip />
-        <el-table-column label="操作" width="110" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" @click="onDiagnose(row)">诊断</el-button>
             <el-button
               v-permission="'stock:watch:delete'"
               link
@@ -63,18 +64,54 @@
         </el-table-column>
       </el-table>
     </el-card>
+
+    <el-drawer v-model="diagVisible" :title="diagTitle" size="420px" destroy-on-close>
+      <div v-loading="diagLoading" class="diag">
+        <template v-if="analysis">
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="综合评分">{{ format(analysis.score, 2) }}</el-descriptions-item>
+            <el-descriptions-item label="评级">
+              <el-tag :type="ratingType(analysis.rating)">{{ analysis.rating }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="估值评价">{{ analysis.valuation || '—' }}</el-descriptions-item>
+          </el-descriptions>
+          <div class="diag-section-title">风险提示</div>
+          <ul v-if="analysis.risks && analysis.risks.length" class="diag-list">
+            <li v-for="(risk, index) in analysis.risks" :key="index">{{ risk }}</li>
+          </ul>
+          <el-empty v-else description="暂无风险提示" :image-size="70" />
+        </template>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { addWatch, listWatchlist, removeWatch } from '@/api/stock'
+import { addWatch, analyzeStock, listWatchlist, removeWatch } from '@/api/stock'
 
 const loading = ref(false)
 const adding = ref(false)
 const code = ref('')
 const rows = ref([])
+
+const diagVisible = ref(false)
+const diagLoading = ref(false)
+const diagTitle = ref('个股诊断')
+const analysis = ref(null)
+
+const RATING_TYPES = {
+  强烈推荐: 'success',
+  推荐: 'success',
+  中性: 'info',
+  谨慎: 'warning',
+  回避: 'danger'
+}
+
+function ratingType(rating) {
+  return RATING_TYPES[rating] || 'info'
+}
 
 function format(value, digits) {
   return Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '—'
@@ -113,6 +150,22 @@ async function onAdd() {
     await load()
   } finally {
     adding.value = false
+  }
+}
+
+async function onDiagnose(row) {
+  if (diagLoading.value) return
+  diagVisible.value = true
+  diagLoading.value = true
+  analysis.value = null
+  diagTitle.value = `${row.stock.name}（${row.stock.code}）个股诊断`
+  try {
+    analysis.value = await analyzeStock(row.stock.code)
+  } catch (e) {
+    ElMessage.error('诊断失败，请稍后重试')
+    diagVisible.value = false
+  } finally {
+    diagLoading.value = false
   }
 }
 
@@ -157,5 +210,21 @@ onMounted(load)
 
 .flat {
   color: #606266;
+}
+
+.diag {
+  min-height: 120px;
+}
+
+.diag-section-title {
+  margin: 18px 0 8px;
+  font-weight: 600;
+}
+
+.diag-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #606266;
+  line-height: 1.9;
 }
 </style>
